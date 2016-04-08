@@ -1,0 +1,42 @@
+#!/usr/bin/env python
+
+# Looks through a servicedef and breaks each service into its own file.
+# Services with the same name are numbered to keep them unique.
+# If your json file is called "A.json", each service file is thrown into A/<service>.json
+# Try using 
+# diff -r --suppress-blank-empty --suppress-common-lines -t --tabsize=4 -y -W 200 A B | vim -
+# to compare both services at once in a wide window.
+# Or, use 
+# vimdiff A/<service>.json B/<service>.json
+# like I do. Just make sure you have a decent colorfile for diffs.
+
+import json
+import os
+
+
+def split_servicedef(filename):
+    svc = json.load(open(filename, 'r'))
+    basename = '.'.join(filename.split('.json')[:-1])
+    try:
+        os.mkdir(basename)
+    except OSError as e:
+        print "Problem creating %s: %s" % (basename, e)
+        return
+    seen = {}
+    for service in svc:
+        name = service.get('Name', 'unknown')
+        seen[name] = seen.get(name, 0) + 1
+        subname = os.path.join(basename, name)
+        if seen[name] > 1:
+            subname = '%s-%i' % (subname, seen[name])
+        with open(subname + '.json', 'w') as outf:
+            json.dump(service, outf, indent=True, sort_keys=True, separators=(',', ': '))
+
+
+if __name__ == '__main__':
+    import argparse
+    ap = argparse.ArgumentParser()
+    ap.add_argument('filenames', nargs='+', type=str, help="Servicedef JSON files to dismantle.")
+    args = ap.parse_args()
+    for filename in args.filenames:
+        split_servicedef(filename)

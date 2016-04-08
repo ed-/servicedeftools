@@ -1,0 +1,85 @@
+#!/usr/bin/env python
+
+# Given a servicedef, just build a hierarchical list of services.
+# Basically what CC shows, and what `serviced service list` does,
+# except older versions of serviced had a problem in the CLI.
+
+
+import json
+
+
+class Service(object):
+    def __init__(self, name, svcid, parentid):
+        self._name = name
+        self.svcid = svcid
+        self.parentid = parentid
+        self.children = []
+
+    @property
+    def name(self):
+        if any([
+            ' ' in self._name,
+            ':' in self._name,
+            '.' in self._name,
+            ]):
+            return '"%s"' % self._name
+        return self._name
+
+    def add(self, child):
+        self.children.append(child)
+        self.children = sorted(self.children, key=lambda x: x.name)
+
+    def dump(self, indent=0):
+        R = []
+        i = ''
+        if indent > 0:
+            i = ('  ' * (indent - 1)) + '- '
+        if self.children:
+            R.append('%s%s:' % (i, self.name))
+            for child in self.children:
+                R.append(child.dump(indent + 1))
+        else:
+            R.append('%s%s' % (i, self.name))
+        return '\n'.join(R)
+
+    def find(self, svcid):
+        if self.svcid == svcid:
+            return self
+        for child in self.children:
+            found = child.find(svcid)
+            if found is not None:
+                return found
+
+
+def simplify(filename):
+    j = json.load(open(filename, 'r'))
+    services = []
+    for jj in j:
+        svc = Service(
+            name=jj.get('Name', 'unknown'),
+            svcid=jj.get('ID', ''),
+            parentid=jj.get('ParentServiceID', ''),
+            )
+        services.append(svc)
+    while len(services) > 1:
+        top = services.pop()
+        parent = None
+        for svc in services:
+            found = svc.find(top.parentid)
+            if found is not None:
+                found.add(top)
+                break
+        else:
+            services.insert(0, top)
+    return services[0]
+
+
+if __name__ == '__main__':
+    import argparse
+    ap = argparse.ArgumentParser()
+    ap.add_argument('filenames', nargs='+', type=str, help="Servicedef JSON files to simplify into YAML.")
+    args = ap.parse_args()
+    for filename in args.filenames:
+        outfile = '.'.join(filename.split('.')[:-1]) + '.yaml'
+        with open(outfile, 'w') as outf:
+            outf.write(simplify(filename).dump())
